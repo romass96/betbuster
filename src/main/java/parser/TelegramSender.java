@@ -4,7 +4,7 @@ import java.io.*;
 import java.net.URL;
 import java.net.URLConnection;
 
-public class Sender {
+public class TelegramSender {
 
     private static final long CHAT_ID = 392160746;
     private static final String API_TOKEN = "895529191:AAFSuh0o0MdGCN4pduT0Ake5enr8lCLCjyk";

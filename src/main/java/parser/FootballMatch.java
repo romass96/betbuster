@@ -1,24 +1,19 @@
 package parser;
 
 import java.util.Date;
+import java.util.Objects;
 
 public class FootballMatch {
-    private String firstTimeScore;
     private String myscoreId;
     private String id;
     private String firstPlayer;
     private String secondPlayer;
     private Date startDate;
     private String status;
-    private String score;
+    private TeamStatistics firstTeamStatistics;
+    private TeamStatistics secondTeamStatistics;
+    private League league;
 
-    public String getFirstTimeScore() {
-        return firstTimeScore;
-    }
-
-    public void setFirstTimeScore(String firstTimeScore) {
-        this.firstTimeScore = firstTimeScore;
-    }
 
     public String getMyscoreId() {
         return myscoreId;
@@ -68,25 +63,52 @@ public class FootballMatch {
         this.status = status;
     }
 
-    public String getScore() {
-        return score;
+    public TeamStatistics getFirstTeamStatistics() {
+        return firstTeamStatistics;
     }
 
-    public void setScore(String score) {
-        this.score = score;
+    public void setFirstTeamStatistics(TeamStatistics firstTeamStatistics) {
+        this.firstTeamStatistics = firstTeamStatistics;
+    }
+
+    public TeamStatistics getSecondTeamStatistics() {
+        return secondTeamStatistics;
+    }
+
+    public void setSecondTeamStatistics(TeamStatistics secondTeamStatistics) {
+        this.secondTeamStatistics = secondTeamStatistics;
+    }
+
+    public League getLeague() {
+        return league;
+    }
+
+    public void setLeague(League league) {
+        this.league = league;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return myscoreId.equals(((FootballMatch)o).getMyscoreId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(myscoreId);
     }
 
     @Override
     public String toString() {
         return "FootballMatch{" +
-                "firstTimeScore='" + firstTimeScore + '\'' +
-                ", myscoreId='" + myscoreId + '\'' +
+                "myscoreId='" + myscoreId + '\'' +
                 ", id='" + id + '\'' +
                 ", firstPlayer='" + firstPlayer + '\'' +
                 ", secondPlayer='" + secondPlayer + '\'' +
                 ", startDate=" + startDate +
                 ", status='" + status + '\'' +
-                ", score='" + score + '\'' +
+                ", firstTeamStatistics=" + firstTeamStatistics +
+                ", secondTeamStatistics=" + secondTeamStatistics +
+                ", league=" + league +
                 '}';
     }
 }
