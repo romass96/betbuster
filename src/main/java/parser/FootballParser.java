@@ -11,7 +11,7 @@ import java.util.logging.Level;
 
 public class FootballParser {
 
-    private static final int LIVE_TIME = 46;
+    private static final int LIVE_BET_TIME = 60;
     private WebClient webClient;
 
     private void initWebClient() {
@@ -27,56 +27,11 @@ public class FootballParser {
         webClient.close();
     }
 
-    public void parseSportEvents(Date from, Date to) throws IOException {
-        int dayDifference = calculateDayDifference(from, to);
-        checkDayDifference(dayDifference);
-
-        initWebClient();
-        Map<Date, List<League>> data = new HashMap<>();
-
-        HtmlPage htmlPage = webClient.getPage(getUrl());
-        webClient.waitForBackgroundJavaScript(10000);
-
-        Calendar calendar = getPrimaryCalendarInstance(new Date());
-        int startDateIndex = calculateDayDifference(calendar.getTime(), from);
-        int endDateIndex = calculateDayDifference(calendar.getTime(), to);
-        calendar = getPrimaryCalendarInstance(from);
-        checkParsingDateIndexes(startDateIndex, endDateIndex);
-        for (int dateIndex = startDateIndex; dateIndex <= endDateIndex; dateIndex++) {
-            setDate(htmlPage, dateIndex);
-            webClient.waitForBackgroundJavaScript(6000);
-            expandLeagues(htmlPage);
-            webClient.waitForBackgroundJavaScript(6000);
-
-            DomNodeList<DomNode> nodes = htmlPage.querySelectorAll("div.event > div");
-
-            Date currentDate = calendar.getTime();
-            LinkedList<League> leagues = new LinkedList<>();
-            for (DomNode node : nodes) {
-                if (hasClass(node, "event__header")) {
-                    League league = extractLeague(node);
-                    leagues.addLast(league);
-                } else if (hasClass(node, "event__match")) {
-                    List<FootballMatch> events = leagues.getLast().getEvents();
-                    events.add(extractEvent(node, calendar));
-                }
-            }
-            data.put(currentDate, leagues);
-            calendar.setTime(currentDate);
-            calendar.add(Calendar.DATE, 1);
-        }
-
-//        checkResults(data);
-        closeWebClient();
-    }
-
     public void parseTodaySportEvents() throws IOException {
         initWebClient();
 
-        HtmlPage htmlPage = webClient.getPage(getUrl());
+        HtmlPage htmlPage = webClient.getPage("https://www.myscore.com.ua");
         webClient.waitForBackgroundJavaScript(10000);
-
-        Calendar calendar = getPrimaryCalendarInstance(new Date());
 
         expandLeagues(htmlPage);
         webClient.waitForBackgroundJavaScript(6000);
@@ -90,11 +45,11 @@ public class FootballParser {
                 leagues.addLast(league);
             } else if (hasClass(node, "event__match")) {
                 List<FootballMatch> events = leagues.getLast().getEvents();
-                events.add(extractEvent(node, calendar));
+                events.add(extractEvent(node));
             }
         }
 
-        checkResults(leagues);
+        filterResults(leagues);
         closeWebClient();
     }
 
@@ -106,7 +61,7 @@ public class FootballParser {
         return league;
     }
 
-    private FootballMatch extractEvent(DomNode node, Calendar calendar) {
+    private FootballMatch extractEvent(DomNode node) {
         FootballMatch event = new FootballMatch();
         event.setFirstPlayer(node.querySelector("div.event__participant.event__participant--home").getTextContent().trim());
         event.setSecondPlayer(node.querySelector("div.event__participant.event__participant--away").getTextContent().trim());
@@ -118,7 +73,7 @@ public class FootballParser {
         } else {
             timeNode = node.querySelector("div.event__time");
             String time= timeNode.getFirstChild().getTextContent();
-            event.setStartDate(getStartDate(time, calendar));
+            event.setStartDate(getStartDate(time));
         }
         event.setScore(extractScore(node));
 
@@ -138,81 +93,87 @@ public class FootballParser {
         return node.getAttributes().getNamedItem("id").getNodeValue().substring(4);
     }
 
-    public String getUrl() {
-        return "https://www.myscore.com.ua";
-    }
-
-    private void checkResults(List<League> leagues) throws IOException {
+    private void filterResults(List<League> leagues) throws IOException {
         for (League league : leagues) {
             for (FootballMatch event : league.getEvents()) {
-                if (getIntTime(event) >= LIVE_TIME && event.getScore() != null ) {
-                    String[] score = event.getScore().split("-");
-                    if (score[0].equals("0") && score[1].equals("0") && checkLastGames(event)) {
+                if (getTimeInNumberFormat(event) >= LIVE_BET_TIME
+                        && isNoGoalsInGame(event.getScore())) {
+
+                    if (checkLastGames(event, 3)) {
+                        Sender.sendMessage("3 ничьи подряд");
+                        Sender.sendMessage("_______________");
                         Sender.sendMessage("https://www.myscore.com.ua/match/" + event.getMyscoreId() +"/#match-summary");
+                        Sender.sendMessage("_______________");
                     }
+
+                    if (checkLastGames(event, 2)) {
+                        Sender.sendMessage("2 ничьи подряд");
+                        Sender.sendMessage("_______________");
+                        Sender.sendMessage("https://www.myscore.com.ua/match/" + event.getMyscoreId() +"/#match-summary");
+                        Sender.sendMessage("_______________");
+                    }
+
                 }
             }
         }
     }
 
-    private boolean checkLastGames(FootballMatch event) throws IOException {
+    private boolean isNoGoalsInGame(String score) {
+        String[] goals = score.split("-");
+        return goals[0].equals("0") && goals[1].equals("0");
+    }
+
+    private boolean checkLastGames(FootballMatch event, int zeroScoreCount) throws IOException {
         String url = "https://www.myscore.com.ua/match/" + event.getMyscoreId() +"/#h2h;overall";
         HtmlPage htmlPage = webClient.getPage(url);
         DomNodeList<DomNode> tables = htmlPage.querySelectorAll("table.head_to_head");
         for (DomNode table : tables) {
             DomNodeList<DomNode> rows = table.querySelectorAll("tbody tr");
-            String firstRowScore = rows.get(0).querySelector("span.score").getTextContent();
-            String secondRowScore = rows.get(1).querySelector("span.score").getTextContent();
-            if (isZeroScore(firstRowScore) && isZeroScore(secondRowScore)) {
-                return true;
-            }
-
+            return isZeroScore(zeroScoreCount, rows);
         }
 
         return false;
     }
 
-    private boolean isZeroScore(String score) {
-        String[] scores = score.split(":");
-        return Integer.valueOf(scores[0].replaceAll("[^0-9]", "")) == 0
-                && Integer.valueOf(scores[1].replaceAll("[^0-9]", "")) == 0;
+    private boolean isZeroScore(int count, DomNodeList<DomNode> rows) {
+        int zeroScoreCounter = 0;
+        for (int i = 1; i < count; i++) {
+            String score = rows.get(i).querySelector("span.score").getTextContent();
+            if (isZeroScore(score)) {
+                zeroScoreCounter++;
+            }
+            if (zeroScoreCounter == count) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private int getIntTime(FootballMatch footballMatch) {
+    private boolean isZeroScore(String score) {
+        String[] scores = score.split(":");
+        return Integer.valueOf(removeSpaces(scores[0])) == 0
+                && Integer.valueOf(removeSpaces(scores[1])) == 0;
+    }
+
+    private int getTimeInNumberFormat(FootballMatch footballMatch) {
         try {
-            return Integer.valueOf(footballMatch.getStatus().replaceAll("[^0-9]", ""));
+            return Integer.valueOf(removeSpaces(footballMatch.getStatus()));
         } catch (Exception e) {
             return 0;
         }
     }
 
-
-    private void checkDayDifference(int dayDifference) {
-        if (dayDifference < 0) {
-            throw new IllegalArgumentException();
-        }
+    private String removeSpaces(String dirtyString) {
+        return dirtyString.replaceAll("[^0-9]", "");
     }
 
-    private void checkParsingDateIndexes(int startDateIndex, int endDateIndex) {
-        if (startDateIndex < -7 || endDateIndex > 7) {
-            throw new IllegalArgumentException();
-        }
-    }
-
-    private Calendar getPrimaryCalendarInstance(Date date) {
-        Calendar calendar = GregorianCalendar.getInstance();
-        calendar.setTime(date);
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-        calendar.set(Calendar.MINUTE, 0);
-        calendar.set(Calendar.SECOND, 0);
-        calendar.set(Calendar.MILLISECOND, 0);
-        return calendar;
-    }
-
-    private Date getStartDate(String time, Calendar calendar) {
+    private Date getStartDate(String time) {
+        Calendar calendar = new GregorianCalendar();
         String[] timeOptions = time.split(":");
         calendar.set(Calendar.HOUR_OF_DAY, Integer.valueOf(timeOptions[0]));
         calendar.set(Calendar.MINUTE, Integer.valueOf(timeOptions[1]));
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
         return calendar.getTime();
     }
 
@@ -220,16 +181,6 @@ public class FootballParser {
         htmlPage.executeJavaScript("document.querySelectorAll('div.event__expander.expand').forEach(function(element) { element.click();})");
     }
 
-    private void setDate(HtmlPage htmlPage, int dateIndex) {
-        htmlPage.executeJavaScript("set_calendar_date(" + dateIndex + ");");
-    }
-
-    private int calculateDayDifference(Date from, Date to) {
-        Calendar fromCalendar = getPrimaryCalendarInstance(from);
-        Calendar toCalendar = getPrimaryCalendarInstance(to);
-        long difference = toCalendar.getTime().getTime() - fromCalendar.getTime().getTime();
-        return (int) (difference / (1000 * 60 * 60 * 24));
-    }
 
     private boolean hasClass(DomNode domNode, String className) {
         String classes = domNode.getAttributes().getNamedItem("class").getNodeValue();
@@ -237,15 +188,6 @@ public class FootballParser {
     }
 
     public static void main(String[] args) throws IOException {
-        FootballParser footballParser = new FootballParser();
-
-        Calendar fromCalendar = GregorianCalendar.getInstance();
-        Calendar toCalendar = GregorianCalendar.getInstance();
-        toCalendar.add(Calendar.DATE, 0);
-        fromCalendar.add(Calendar.DATE, 0);
-
-//        footballParser.parseSportEvents(fromCalendar.getTime(), toCalendar.getTime());
-        footballParser.parseTodaySportEvents();
-
+        new FootballParser().parseTodaySportEvents();
     }
 }
