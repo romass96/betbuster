@@ -14,7 +14,7 @@ public class LiveFootballParser {
     private static final int LIVE_BET_TIME = 60;
     private WebClient webClient;
     private Map<FootballMatch, StrategyResult> notifications = new HashMap<>();
-    private Set<FootballMatch> liveEvents = new HashSet<>();
+    private Set<FootballMatch> liveEvents;
 
     public void initWebClient() {
         java.util.logging.Logger.getLogger("com.gargoylesoftware").setLevel(Level.OFF);
@@ -30,6 +30,7 @@ public class LiveFootballParser {
     }
 
     public void parseTodaySportEvents() throws IOException {
+        liveEvents = new HashSet<>();
         HtmlPage htmlPage = webClient.getPage("https://www.myscore.com.ua");
         webClient.waitForBackgroundJavaScript(10000);
 
@@ -75,14 +76,14 @@ public class LiveFootballParser {
     private TeamStatistics extractFirstTeamStatistics(DomNode node) {
         TeamStatistics teamStatistics = new TeamStatistics();
         teamStatistics.setRedCardCount(node.querySelectorAll("event__participant event__participant--home icon--redCard").size());
-        teamStatistics.setGoalCount(Integer.valueOf(removeSpaces(node.querySelector("div.event__scores span:first-child").getTextContent())));
+        teamStatistics.setGoalCount(Integer.parseInt(removeSpaces(node.querySelector("div.event__scores span:first-child").getTextContent())));
         return teamStatistics;
     }
 
     private TeamStatistics extractSecondTeamStatistics(DomNode node) {
         TeamStatistics teamStatistics = new TeamStatistics();
         teamStatistics.setRedCardCount(node.querySelectorAll("event__participant event__participant--away icon--redCard").size());
-        teamStatistics.setGoalCount(Integer.valueOf(removeSpaces(node.querySelector("div.event__scores span:last-child").getTextContent())));
+        teamStatistics.setGoalCount(Integer.parseInt(removeSpaces(node.querySelector("div.event__scores span:last-child").getTextContent())));
         return teamStatistics;
     }
 
@@ -149,7 +150,8 @@ public class LiveFootballParser {
     }
 
     private boolean isNotifiedEvent(FootballMatch event, StrategyResult result) {
-        return notifications.get(event.getMyscoreId()).equals(result);
+        StrategyResult value = notifications.get(event);
+        return value != null && value.equals(result);
     }
 
     private boolean isZeroScore(int count, DomNodeList<DomNode> rows) {
