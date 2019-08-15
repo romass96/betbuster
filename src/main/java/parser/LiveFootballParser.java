@@ -6,15 +6,18 @@ import com.gargoylesoftware.htmlunit.html.DomNodeList;
 import com.gargoylesoftware.htmlunit.html.HtmlPage;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 public class LiveFootballParser {
 
     private static final int LIVE_BET_TIME = 60;
     private WebClient webClient;
-    private Map<FootballMatch, StrategyResult> notifications = new HashMap<>();
-    private Set<FootballMatch> liveEvents;
+    private Set<Notification> notifications = new HashSet<>();
+    private Set<FootballMatch> liveEvents = new HashSet<>();
 
     public void initWebClient() {
         java.util.logging.Logger.getLogger("com.gargoylesoftware").setLevel(Level.OFF);
@@ -29,8 +32,7 @@ public class LiveFootballParser {
         webClient.close();
     }
 
-    public void parseTodaySportEvents() throws IOException {
-        liveEvents = new HashSet<>();
+    public void parseLiveEvents() throws IOException {
         HtmlPage htmlPage = webClient.getPage("https://www.myscore.com.ua");
         webClient.waitForBackgroundJavaScript(10000);
 
@@ -41,16 +43,21 @@ public class LiveFootballParser {
         for (DomNode node : nodes) {
             liveEvents.add(extractEvent(node));
         }
-        cleanNonLiveNotifications();
-        filterResults();
+        clearNotifications();
+
+        Set<Notification> liveNotifications = getNotifications(liveEvents);
+        for (Notification notification : liveNotifications) {
+            if (!notifications.contains(notification)) {
+                notifications.add(notification);
+                notifyInTelegram(notification.getMyscoreId(), notification.getStrategyResult());
+            }
+        }
+
+        liveEvents.clear();
     }
 
-    private League extractLeague(DomNode node) {
-        League league = new League();
-        league.setName(node.querySelector("span.event__title--name").getTextContent());
-        league.setRegion(node.querySelector("div.event__title").getTextContent());
-
-        return league;
+    private void expandLeagues(HtmlPage htmlPage) {
+        htmlPage.executeJavaScript("document.querySelectorAll('div.event__expander.expand').forEach(function(element) { element.click();})");
     }
 
     private FootballMatch extractEvent(DomNode node) {
@@ -73,6 +80,12 @@ public class LiveFootballParser {
         return event;
     }
 
+    private void clearNotifications() {
+        notifications = notifications.stream()
+                .filter(notification -> Duration.between(LocalDateTime.now(), notification.getDateTime()).toMinutes() > 30)
+                .collect(Collectors.toSet());
+    }
+
     private TeamStatistics extractFirstTeamStatistics(DomNode node) {
         TeamStatistics teamStatistics = new TeamStatistics();
         teamStatistics.setRedCardCount(node.querySelectorAll("event__participant event__participant--home icon--redCard").size());
@@ -91,10 +104,12 @@ public class LiveFootballParser {
         return node.getAttributes().getNamedItem("id").getNodeValue().substring(4);
     }
 
-    private void filterResults() throws IOException {
+    private Set<Notification> getNotifications(Set<FootballMatch> liveEvents) throws IOException {
+        Set<Notification> notifications = new HashSet<>();
+
         for (FootballMatch event : liveEvents) {
             if (getTimeInNumberFormat(event) >= LIVE_BET_TIME) {
-                if (isNoGoalsInGame(event)) {
+                if (isDraw(event, 0) || isDraw(event, 1)) {
                     String url = "https://www.myscore.com.ua/match/" + event.getMyscoreId() +"/#h2h;overall";
                     HtmlPage htmlPage = webClient.getPage(url);
                     DomNodeList<DomNode> tables = htmlPage.querySelectorAll("table.head_to_head");
@@ -102,81 +117,55 @@ public class LiveFootballParser {
                     DomNodeList<DomNode> firstTeamRows = tables.get(0).querySelectorAll("tbody tr");
                     DomNodeList<DomNode> secondTeamRows = tables.get(1).querySelectorAll("tbody tr");
 
-                    if (isZeroScore(3, firstTeamRows) || isZeroScore(3, secondTeamRows)) {
-                        notifyInTelegram(event, StrategyResult.THREE_LAST_GAMES_ZERO_DRAWS);
-                    } else if (isZeroScore(2, firstTeamRows) || isZeroScore(2, secondTeamRows)) {
-                        notifyInTelegram(event, StrategyResult.TWO_LAST_GAMES_ZERO_DRAWS);
-                    } else if (isZeroScore(1, firstTeamRows) && isZeroScore(1, secondTeamRows)) {
-                        notifyInTelegram(event, StrategyResult.ZERO_DRAWS_FOR_ALL_TEAMS);
-                    } else if (isDraw(event)) {
-                        notifyInTelegram(event, StrategyResult.DRAW);
+                    if (isDraw(2, firstTeamRows, 0) || isDraw(2, secondTeamRows, 0)) {
+                        notifications.add(new Notification(event.getMyscoreId(), LocalDateTime.now(), StrategyResult.TWO_LAST_GAMES_ZERO_DRAWS));
+                    } else if (isDraw(2, firstTeamRows, 1) || isDraw(2, secondTeamRows, 1)) {
+                        notifications.add(new Notification(event.getMyscoreId(), LocalDateTime.now(), StrategyResult.TWO_LAST_GAMES_ONE_GOAL_DRAWS));
                     }
 
-                } else if (hasOneTeamMoreRedCardsThanAnother(event) && isDraw(event)) {
-                    notifyInTelegram(event, StrategyResult.RED_CARD);
                 }
             }
         }
-    }
-
-    private void cleanNonLiveNotifications() {
-        Iterator<Map.Entry<FootballMatch, StrategyResult>> iterator = notifications.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<FootballMatch, StrategyResult> entry = iterator.next();
-            if (!liveEvents.contains(entry.getKey())) {
-                notifications.remove(entry.getKey());
-            }
-        }
+        return notifications;
     }
 
     private boolean hasOneTeamMoreRedCardsThanAnother(FootballMatch event) {
         return event.getFirstTeamStatistics().getRedCardCount() != event.getSecondTeamStatistics().getRedCardCount();
     }
 
-    private boolean isDraw(FootballMatch event) {
-        return event.getFirstTeamStatistics().getGoalCount() == event.getSecondTeamStatistics().getGoalCount();
+    private boolean isDraw(FootballMatch event, int goalCount) {
+        return event.getFirstTeamStatistics().getGoalCount() == goalCount
+                && event.getSecondTeamStatistics().getGoalCount() == goalCount;
     }
 
-    private boolean isNoGoalsInGame(FootballMatch event) {
-        return event.getFirstTeamStatistics().getGoalCount() == 0 && event.getSecondTeamStatistics().getGoalCount() == 0;
+    private void notifyInTelegram(String myscoreId, StrategyResult result) throws IOException {
+        TelegramSender.sendMessage(result.getDescription());
+        TelegramSender.sendMessage("https://www.myscore.com.ua/match/" + myscoreId +"/#match-summary");
     }
 
-    private void notifyInTelegram(FootballMatch event, StrategyResult result) throws IOException {
-        if (!isNotifiedEvent(event, result)) {
-            TelegramSender.sendMessage(result.getDescription());
-            TelegramSender.sendMessage("https://www.myscore.com.ua/match/" + event.getMyscoreId() +"/#match-summary");
-            notifications.put(event, result);
-        }
-    }
-
-    private boolean isNotifiedEvent(FootballMatch event, StrategyResult result) {
-        StrategyResult value = notifications.get(event);
-        return value != null && value.equals(result);
-    }
-
-    private boolean isZeroScore(int count, DomNodeList<DomNode> rows) {
-        int zeroScoreCounter = 0;
+    private boolean isDraw(int drawCount, DomNodeList<DomNode> rows, int goalCount) {
+        int drawCounter = 0;
         for (int i = 0; i < 4; i++) {
             String score = rows.get(i).querySelector("span.score").getTextContent();
-            if (isZeroScore(score)) {
-                zeroScoreCounter++;
+            if (isDraw(score, goalCount)) {
+                drawCounter++;
             }
-            if (zeroScoreCounter == count) {
+            if (drawCounter == drawCount) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean isZeroScore(String score) {
+    private boolean isDraw(String score, int goalCount) {
         String[] scores = score.split(":");
-        return Integer.valueOf(removeSpaces(scores[0])) == 0
-                && Integer.valueOf(removeSpaces(scores[1])) == 0;
+        return Integer.parseInt(removeSpaces(scores[0])) == goalCount
+                && Integer.parseInt(removeSpaces(scores[1])) == goalCount;
     }
 
     private int getTimeInNumberFormat(FootballMatch footballMatch) {
         try {
-            return Integer.valueOf(removeSpaces(footballMatch.getStatus()));
+            return Integer.parseInt(removeSpaces(footballMatch.getStatus()));
         } catch (Exception e) {
             return 0;
         }
@@ -189,17 +178,12 @@ public class LiveFootballParser {
     private Date getStartDate(String time) {
         Calendar calendar = new GregorianCalendar();
         String[] timeOptions = time.split(":");
-        calendar.set(Calendar.HOUR_OF_DAY, Integer.valueOf(timeOptions[0]));
-        calendar.set(Calendar.MINUTE, Integer.valueOf(timeOptions[1]));
+        calendar.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timeOptions[0]));
+        calendar.set(Calendar.MINUTE, Integer.parseInt(timeOptions[1]));
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
         return calendar.getTime();
     }
-
-    private void expandLeagues(HtmlPage htmlPage) {
-        htmlPage.executeJavaScript("document.querySelectorAll('div.event__expander.expand').forEach(function(element) { element.click();})");
-    }
-
 
     private boolean hasClass(DomNode domNode, String className) {
         String classes = domNode.getAttributes().getNamedItem("class").getNodeValue();
@@ -211,11 +195,12 @@ public class LiveFootballParser {
         parser.initWebClient();
         while (true) {
             try {
-                parser.parseTodaySportEvents();
+                parser.parseLiveEvents();
                 Thread.sleep(1000 * 60 * 4);
             } catch (Exception e) {
-
+                break;
             }
         }
+        parser.closeWebClient();
     }
 }

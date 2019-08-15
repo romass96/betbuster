@@ -5,14 +5,12 @@ import java.util.Objects;
 
 public class FootballMatch {
     private String myscoreId;
-    private String id;
     private String firstPlayer;
     private String secondPlayer;
     private Date startDate;
     private String status;
     private TeamStatistics firstTeamStatistics;
     private TeamStatistics secondTeamStatistics;
-    private League league;
 
 
     public String getMyscoreId() {
@@ -21,14 +19,6 @@ public class FootballMatch {
 
     public void setMyscoreId(String myscoreId) {
         this.myscoreId = myscoreId;
-    }
-
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
     }
 
     public String getFirstPlayer() {
@@ -79,14 +69,6 @@ public class FootballMatch {
         this.secondTeamStatistics = secondTeamStatistics;
     }
 
-    public League getLeague() {
-        return league;
-    }
-
-    public void setLeague(League league) {
-        this.league = league;
-    }
-
     @Override
     public boolean equals(Object o) {
         return myscoreId.equals(((FootballMatch)o).getMyscoreId());
@@ -101,14 +83,12 @@ public class FootballMatch {
     public String toString() {
         return "FootballMatch{" +
                 "myscoreId='" + myscoreId + '\'' +
-                ", id='" + id + '\'' +
                 ", firstPlayer='" + firstPlayer + '\'' +
                 ", secondPlayer='" + secondPlayer + '\'' +
                 ", startDate=" + startDate +
                 ", status='" + status + '\'' +
                 ", firstTeamStatistics=" + firstTeamStatistics +
                 ", secondTeamStatistics=" + secondTeamStatistics +
-                ", league=" + league +
                 '}';
     }
 }

@@ -1,11 +1,9 @@
 package parser;
 
 public enum StrategyResult {
-    TWO_LAST_GAMES_ZERO_DRAWS("3 ничьи подряд"),
-    THREE_LAST_GAMES_ZERO_DRAWS("2 ничьи подряд"),
-    ZERO_DRAWS_FOR_ALL_TEAMS("Ничьи у обеих команд"),
-    RED_CARD("Красная карточка"),
-    DRAW("Ничья");
+    TWO_LAST_GAMES_ZERO_DRAWS("2 ничьи подряд 0:0"),
+    TWO_LAST_GAMES_ONE_GOAL_DRAWS("2 ничьи подряд 1:1"),
+    RED_CARD("Красная карточка");
 
     private String description;
 
