@@ -39,7 +39,8 @@ public class LiveFootballParser {
         expandLeagues(htmlPage);
         webClient.waitForBackgroundJavaScript(6000);
 
-        DomNodeList<DomNode> nodes = htmlPage.querySelectorAll("div.event > div.event__match--live");
+        DomNodeList<DomNode> nodes = htmlPage.querySelectorAll("div.event__match--live");
+        System.out.println("Parsed " + nodes.size() + " events");
         for (DomNode node : nodes) {
             liveEvents.add(extractEvent(node));
         }
@@ -47,6 +48,7 @@ public class LiveFootballParser {
 
         Set<Notification> liveNotifications = getNotifications(liveEvents);
         for (Notification notification : liveNotifications) {
+            System.out.println(notification);
             if (!notifications.contains(notification)) {
                 notifications.add(notification);
                 notifyInTelegram(notification.getMyscoreId(), notification.getStrategyResult());
@@ -108,8 +110,9 @@ public class LiveFootballParser {
         Set<Notification> notifications = new HashSet<>();
 
         for (FootballMatch event : liveEvents) {
+            System.out.println(event);
             if (getTimeInNumberFormat(event) >= LIVE_BET_TIME) {
-                if (isDraw(event, 0) || isDraw(event, 1)) {
+                if (isTwoDrawsTogether(event, 0) || isTwoDrawsTogether(event, 1)) {
                     String url = "https://www.myscore.com.ua/match/" + event.getMyscoreId() +"/#h2h;overall";
                     HtmlPage htmlPage = webClient.getPage(url);
                     DomNodeList<DomNode> tables = htmlPage.querySelectorAll("table.head_to_head");
@@ -117,9 +120,9 @@ public class LiveFootballParser {
                     DomNodeList<DomNode> firstTeamRows = tables.get(0).querySelectorAll("tbody tr");
                     DomNodeList<DomNode> secondTeamRows = tables.get(1).querySelectorAll("tbody tr");
 
-                    if (isDraw(2, firstTeamRows, 0) || isDraw(2, secondTeamRows, 0)) {
+                    if (isTwoDrawsTogether(firstTeamRows, 0) || isTwoDrawsTogether(secondTeamRows, 0)) {
                         notifications.add(new Notification(event.getMyscoreId(), LocalDateTime.now(), StrategyResult.TWO_LAST_GAMES_ZERO_DRAWS));
-                    } else if (isDraw(2, firstTeamRows, 1) || isDraw(2, secondTeamRows, 1)) {
+                    } else if (isTwoDrawsTogether(firstTeamRows, 1) || isTwoDrawsTogether(secondTeamRows, 1)) {
                         notifications.add(new Notification(event.getMyscoreId(), LocalDateTime.now(), StrategyResult.TWO_LAST_GAMES_ONE_GOAL_DRAWS));
                     }
 
@@ -133,7 +136,7 @@ public class LiveFootballParser {
         return event.getFirstTeamStatistics().getRedCardCount() != event.getSecondTeamStatistics().getRedCardCount();
     }
 
-    private boolean isDraw(FootballMatch event, int goalCount) {
+    private boolean isTwoDrawsTogether(FootballMatch event, int goalCount) {
         return event.getFirstTeamStatistics().getGoalCount() == goalCount
                 && event.getSecondTeamStatistics().getGoalCount() == goalCount;
     }
@@ -143,18 +146,10 @@ public class LiveFootballParser {
         TelegramSender.sendMessage("https://www.myscore.com.ua/match/" + myscoreId +"/#match-summary");
     }
 
-    private boolean isDraw(int drawCount, DomNodeList<DomNode> rows, int goalCount) {
-        int drawCounter = 0;
-        for (int i = 0; i < 4; i++) {
-            String score = rows.get(i).querySelector("span.score").getTextContent();
-            if (isDraw(score, goalCount)) {
-                drawCounter++;
-            }
-            if (drawCounter == drawCount) {
-                return true;
-            }
-        }
-        return false;
+    private boolean isTwoDrawsTogether(DomNodeList<DomNode> rows, int goalCount) {
+        String firstScore = rows.get(0).querySelector("span.score").getTextContent();
+        String secondScore = rows.get(1).querySelector("span.score").getTextContent();
+        return isDraw(firstScore, goalCount) && isDraw(secondScore, goalCount);
     }
 
     private boolean isDraw(String score, int goalCount) {

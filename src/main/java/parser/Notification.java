@@ -48,4 +48,13 @@ public class Notification {
     public boolean equals(Object obj) {
         return ((Notification) obj).getMyscoreId().equals(myscoreId);
     }
+
+    @Override
+    public String toString() {
+        return "Notification{" +
+                "myscoreId='" + myscoreId + '\'' +
+                ", dateTime=" + dateTime +
+                ", strategyResult=" + strategyResult +
+                '}';
+    }
 }
